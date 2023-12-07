@@ -2,7 +2,9 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
-const cors = require('cors');
+const bodyParser = require("body-parser");
+const cors = require("cors");
+const twilio = require("twilio");
 const jwt = require('jsonwebtoken');
 const multer=require("multer");
 const app = express();
@@ -14,6 +16,9 @@ dotenv.config();
 const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
+const accountSid = "AC7d6b3f673399a3f0b114cc7341674665";
+const authToken = "13dcb0a8c06c8f492a2b3cd61b943a0a";
+const client = twilio(accountSid, authToken);
 mongoose.connect(process.env.MONGODB_URI,{
 }).then((conn)=>{
     console.log("DB CONNECTED");
@@ -28,8 +33,10 @@ const userSchema=new mongoose.Schema({
     verified:{type:Boolean,default:false},
     verificationCode:String,
     verificationCodeExpiration:Date,
+    otpExpiration:{type:Date,default:""},
     role:{type:String,default:'user'},
-    image:{type:String,default:""}
+    image:{type:String,default:""},
+    otp:{type:String,default:""},
 });
 const User=mongoose.model('User',userSchema);
 const jobSchema=new mongoose.Schema({
@@ -74,6 +81,7 @@ app.post('/register',async(req,res)=>{
             verificationCodeExpiration,
         });
         await user.save();
+
         const mailOptions={
             from:"r7814474688@gmail.com",
             to:email,
@@ -95,6 +103,38 @@ app.post('/register',async(req,res)=>{
         res.status(500).json({error:"Internal server error"});
     }
 });
+app.patch('/update-user',authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { firstname, lastname, email, password } = req.body;
+
+        // Find the user by userId
+        const user = await User.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found.' });
+        }
+
+        // Update user information
+        if (firstname) user.firstname = firstname;
+        if (lastname) user.lastname = lastname;
+        if (email) user.email = email;
+
+        // If a new password is provided, hash and update it
+        if (password) {
+            const hashedPassword = await bcrypt.hash(password, 8);
+            user.password = hashedPassword;
+        }
+
+        // Save the updated user
+        await user.save();
+
+        res.status(200).json({ message: 'User information updated successfully.' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal server error.' });
+    }
+});
 app.get('/verify/:email/:code',async(req,res)=>{
     try{
         const{email,code}=req.params;
@@ -104,15 +144,77 @@ app.get('/verify/:email/:code',async(req,res)=>{
         }
         if(user.verificationCodeExpiration<new Date()){
             await User.deleteOne({ email });
-            return res.status(400).json({error:"Verification Code expired"});
+
         }
-        user.verified=true;
-        await user.save();
+        
         res.status(200).json({message:"Email verification successful.You can now Login"})
     }catch(error){
         console.log(error);
         res.status(500).json({error:"Internal server error"})
     }
+});
+
+app.post("/send-otp/:email", async(req, res) => {
+    try{
+        const { email } = req.params;
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            return res.status(404).json({ error: "User not found." });
+        }
+    function generateOTP() {
+      const digits = "0123456789";
+      let OTP = "";
+      for (let i = 0; i < 6; i++) {
+        OTP += digits[Math.floor(Math.random() * 10)];
+      }
+      return OTP;
+    }
+      const otp = generateOTP();
+      const message = `Your OTP is ${otp}`;
+      user.otp=otp;
+        await user.save();
+      client.messages
+        .create({
+          body: message,
+          from: "+14133495521",
+          to: req.body.phoneNumber,
+        })
+        .then((message) => {
+          console.log(`OTP sent to ${message.to}`);
+          res.send({ success: true, message: "OTP sent successfully" });
+        })
+        .catch((error) => {
+          console.error(error);
+          res.send({ success: false, message: "Failed to send OTP" });
+        });
+    }catch(error){
+        console.error(error);
+        res.status(500).json({ success: false, message: "Failed to send OTP" });
+    }
+    });
+
+app.post('/verify-otp', async (req, res) => {
+        try {
+            const { email, otp } = req.body;
+            const user = await User.findOne({ email });
+    
+            if (!user) {
+                return res.status(404).json({ error: 'User not found.' });
+            }
+
+            if (otp !== user.otp) {
+                return res.status(401).json({ error: 'Invalid OTP.' });
+            }         
+     
+            user.verified = true;
+            await user.save();
+    
+            res.status(200).json({ message: 'OTP verified successfully. User is now verified.' });
+        } catch (error) {
+            console.error(error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
 });
 app.post('/login',async(req,res)=>{
     try{
@@ -124,6 +226,11 @@ app.post('/login',async(req,res)=>{
         if(!user.verified){
             console.log(error);
             return res.status(401).json({ error: 'Account not verified. Please check your email for verification.' });
+        }
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+
+        if (!isPasswordValid) {
+            return res.status(401).json({ error: 'Invalid email or password.' });
         }
         const token=jwt.sign({userId:user._id},'jwt_secret',{expiresIn:'12h'});
         res.status(200).json(token);
@@ -185,7 +292,6 @@ app.post('/resetPassword/:email/:code',async(req,res)=>{
         res.status(500).json({error:"Internal server error"});
     }
 });
-
 const storage=multer.diskStorage({
     destination:function(req,file,cb){
         cb(null,'uploads/')
