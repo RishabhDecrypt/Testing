@@ -61,10 +61,11 @@ const Task = mongoose.model('Task', taskSchema);
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: 'r7814474688@gmail.com',
-        pass: 'wctf otex abxa tuzc'
+        user:process.env.EMAIL_USER,
+        pass:process.env.EMAIL_PASS
     }
 });
+console.log(transporter);
 app.post('/register', async (req, res) => {
     try {
         const { firstname, lastname, email, password } = req.body;
