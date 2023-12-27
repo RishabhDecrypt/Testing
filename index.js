@@ -2,7 +2,6 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
-const bodyParser = require("body-parser");
 const cors = require("cors");
 const twilio = require("twilio");
 const jwt = require('jsonwebtoken');
