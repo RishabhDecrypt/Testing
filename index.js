@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
+const bodyParser = require("body-parser");
 const cors = require("cors");
 const twilio = require("twilio");
 const jwt = require('jsonwebtoken');
@@ -39,7 +40,7 @@ const userSchema = new mongoose.Schema({
     role: { type: String, default: 'user' },
     image: { type: String, default: "" },
     otp: { type: String, default: "" },
-    phoneNumber: { type: String}
+    phoneNumber: { type: String,default: ""}
 });
 const User = mongoose.model('User', userSchema);
 const jobSchema = new mongoose.Schema({
@@ -64,7 +65,7 @@ const transporter = nodemailer.createTransport({
         pass:process.env.EMAIL_PASS
     }
 });
-console.log(transporter);
+
 app.post('/register', async (req, res) => {
     try {
         const { firstname, lastname, email, password } = req.body;
@@ -100,7 +101,8 @@ app.post('/register', async (req, res) => {
             }
             console.log("Email sent" + info.response);
         });
-        res.status(201).json({ message: "registration successful pls check your email for verification" });
+        res.status(201).json({ data:user,
+            message: "registration successful pls check your email for verification" });
 
     } catch (error) {
         console.log(error);
@@ -167,6 +169,8 @@ app.post("/send-otp/", authenticateToken, async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: "User not found." });
         }
+        user.phoneNumber = phoneNumber;
+
         function generateOTP() {
             const digits = "0123456789";
             let OTP = "";
@@ -421,7 +425,8 @@ app.delete('/deleteJob/:jobId', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Internal server error.' });
     }
 });
-app.patch('/updateJob/:jobId', authenticateToken, async (reeq, res) => {
+
+app.patch('/updateJob/:jobId', authenticateToken, async (req, res) => {
     try {
         const jobId = req.params.jobId;
         const { jobname, jobDescription, dueDate, assignee } = req.body;
@@ -436,7 +441,7 @@ app.patch('/updateJob/:jobId', authenticateToken, async (reeq, res) => {
         job.jobDescription = jobDescription;
         job.dueDate = dueDate;
         job.assignee = assignee;
-        await Job.save();
+        await job.save(); 
         res.status(200).json({ message: 'Job updated successfully.' });
     } catch (error) {
         console.error(error);
