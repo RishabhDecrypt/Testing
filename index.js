@@ -141,6 +141,7 @@ app.patch('/update-user', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Internal server error.' });
     }
 });
+
 app.get('/verify/:email/:code', async (req, res) => {
     try {
         const { email, code } = req.params;
